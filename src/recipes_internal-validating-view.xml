@@ -1,0 +1,276 @@
+ <!-- Internal Validating View -->
+ <section id="internal-validating-view">
+  <title>Internal Validating View Recipe</title>
+  
+  <para>This recipe describes how to use BIND Views so that
+  authoritative (internal) zones on a shared resolver and authoritative
+server get validated.</para>
+
+<para>
+When your nameserver is both the recursive nameserver used by your
+(usually internal) clients, and the authoritative server for your
+(especially internal) zones, results sent from the authoritative
+zones are not validated.  Thus the AD bit isn't sent in the response,
+and tools like the DNSSEC validation plugin for Firefox will report
+them as 'not dnssec secured'.  This is both misleading, and can
+create an inconsistent user experience.  A mobile computer on the
+road using a public validating resolver will say your zone is
+secure, but the same machine on your private (and hopefully more
+secure) network will say it is not.
+</para>
+
+<para>
+Many organizations have separate 'views' of the DNS for internal
+use and for clients.  Some people hate them.  Some implement them
+for conveniences.  Others implement them for technical reasons,
+including reverse DNS for unroutable address space and the NAT
+behavior of certain routers.  So they exist - and there is a trap
+for DNSSEC-aware clients:  Often nameservers providing multiple
+views to (recursive) clients are also also authoritative for local
+zones.
+</para>
+
+<para>
+Not setting AD in this case isn't unique to split view DNS.  Even
+if you only have one view, AD won't set if your recursive server
+is also authoritative for a zone.
+</para>
+
+<para>
+You want your zones validate everywhere for a consistent user
+experience, and so you can debug your zones, applications and tools
+internally - before exposing them to your customers.  This can be
+tricky (and doesn't happen by default)
+</para>
+
+<para>
+The basic approach is to have a
+recursive validating version of each view, which gets its data from
+the local authoritative server (itself) using static-stub zones,
+based on a key.  As with any view configuration, the order of
+matches is important.
+</para>
+
+<para>
+Client requests that request recursion hit the recursive view,
+which consults the authoritative view - and thus will validate and
+set AD.  Clients that don't (and that includes the recursive view's
+internal requests from the static-stub zone) fall thru to a
+traditional authoritative view.
+</para>
+
+<para>
+So presenting an 'internal' and an 'external' view to clients
+requires configuring 4 views in named:
+<pre>
+ 1 recursive view and 1 authoritative view for each view presented.
+</pre><br />
+
+If previously you only had one view, you'll want to implement 2.
+(Or split your recursive server from your authoritative server.
+There are valid arguments for both cases - to the point of religious
+wars, which won't be settled here.  Assuming you keep a consolidated
+server, this is how you make it work.)
+</para>
+
+<para>
+Here are config file snippets.  I've tried to edit it down to
+essentials; hope I didn't lose anything important.
+</para>
+
+<para>
+This server is 192.168.148.6 internally; it has a public IP addresses
+via NAT.  (The master has more clutter, both because it's a master,
+and because it has both IPv4 and IPv6.)
+</para>
+
+<para>
+Note the use of include to avoid replication.
+</para>
+
+# These acls classify clients (that don't provide TSIG keys).
+acl any_external { <private IP addresses to be served by 'external' view>};
+acl all_internal { !any_external;  <private IP address space> };
+
+     	key "INTERNAL_VIEW_KEY" {
+     	      algorithm hmac-md5;
+     	      secret Unavailable;
+     	};
+
+     	key "EXTERNAL_VIEW_KEY" {
+     	      algorithm hmac-md5;
+     	      secret Unavailable;
+     	};
+              # Recursive resolving view  - internal
+
+      view "r-internal" in {
+     	    include "internal_servers.conf";
+     	
+      	server 127.0.0.1 {
+      	    keys { INTERNAL_VIEW_KEY; };
+     	};
+     	server ::1 {
+     	    keys { INTERNAL_VIEW_KEY; };
+     	};
+     	
+     	// Internal IPV4 network
+     	
+     	server 192.168.0.0/16 {
+     	    keys { INTERNAL_VIEW_KEY; };
+     	};
+     	
+     	// IPV6 network
+     	
+     	server 2001:0db8::0/32 {
+     	    keys { INTERNAL_VIEW_KEY; };
+     	};
+
+     	    match-clients { key INTERNAL_VIEW_KEY;
+     			   !key EXTERNAL_VIEW_KEY;
+     			   all_internal; }; # Note that keys take precedence over this ACL
+     	    match-recursive-only yes;
+     	
+     	    notify-source 	 192.168.148.6;
+     	    also-notify	{ internal_slaves; };
+     	    transfer-source 	 192.168.148.6;
+     	    query-source address 192.168.148.6;
+     	    recursion yes;
+     	    allow-recursion { key INTERNAL_VIEW_KEY;
+     			     !key EXTERNAL_VIEW_KEY;
+     			      all_internal; }; # Note that keys take precedence over this ACL
+     	    allow-query-cache { key INTERNAL_VIEW_KEY;
+     			       !key EXTERNAL_VIEW_KEY;
+      			        all_internal; }; # Note that keys take precedence over this ACL
+
+<para>
+For internal views, the trust root is independent of the registrar, so:
+</para>
+
+     	    include "internal_trusted_keys.conf"; // Validator
+trusted-keys {
+  example.net. 257 3 7 "...";  # Apex only
+  168.192.in-addr.arpa. 257 3 7 "..."; 
+  10.in-addr.arpa. 257 3 7 "..."; 
+  8.b.d.0.1.0.0.2.ip6.arpa. 257 3 7 "...";  # This is the example block, use you
+rs
+}
+
+     	
+     	    include "internal_stub_zones.conf";
+zone "example.net" in {
+  type static-stub;
+  server-addresses { 127.0.0.1; };
+}
+
+ ... # RPT for each zone served, including subdomains
+     	};
+     	
+# The authoritative view.  This one is a slave, but masters work with the usual 
+changes to the zone statements
+ 71	view "internal" in { 
+     	    attach-cache "r-internal";
+     	    include "internal_servers.conf";
+     	
+<para>
+Same as above:
+</para>
+
+     	    match-clients { key INTERNAL_VIEW_KEY;
+     			    !key EXTERNAL_VIEW_KEY;
+      			   all_internal; }; # Note that keys take precedence over this ACL
+     	
+     	    notify-source 	 192.168.148.6;	
+     	    also-notify	{ internal_slaves; };
+     	    transfer-source 	 192.168.148.6;	
+     	    query-source address 192.168.148.6;	
+     	    recursion yes; 
+     	    allow-recursion { key INTERNAL_VIEW_KEY;
+     			     !key EXTERNAL_VIEW_KEY;
+     			      all_internal; }; # Note that keys take precedence over this ACL
+     	    allow-query-cache { key INTERNAL_VIEW_KEY;
+     			       !key EXTERNAL_VIEW_KEY;
+     			        all_internal; }; # Note that keys take precedence over this AC
+L
+     	
+     	    include "internal_slave_zones.conf";
+     	    zone "example.net" in {
+     		type slave;
+     		file "...";
+      		allow-transfer { internal_xfr; };
+     		forwarders { };
+     		masters { example_int_masters; };
+     	    };
+     	};
+
+<para>
+The external view doesn't do recursion for external clients - but
+does for internal 'as if' client addresses.  Looks the same except
+'any_external' represents *private* as-if addresses.  Real external
+client addresses will fall thru to the 'external', authoritative
+only view.  If you don't ever do recursion for the external view,
+you can eliminate the r-external view (and only need 3 views.)
+However, odds are you'll find that you want this at some point.
+</para>
+
+    	view "r-external" in {
+    	    include "external_servers.conf";
+# Same as above internal_servers.conf, except EXTERNAL_VIEW_KEY
+
+    	
+    	    match-clients { key EXTERNAL_VIEW_KEY;
+    			   !key INTERNAL_VIEW_KEY;
+    			    any_external; };
+    	    match-recursive-only yes;
+    	
+    	    notify-source 	 192.168.148.6;
+    	    also-notify	{ external_slaves; };
+    	    transfer-source 	 192.168.148.6;
+    	    query-source address 192.168.148.6;
+    	    recursion yes;
+    	    allow-recursion { key EXTERNAL_VIEW_KEY;
+    			     !key INTERNAL_VIEW_KEY;
+    			      any_external; };
+    	    allow-query-cache { key EXTERNAL_VIEW_KEY;
+    			       !key INTERNAL_VIEW_KEY;
+    			        any_external; };
+    	
+    	    include "external_stub_zones.conf";
+# Public IP addresses, including reverse zone(s) if delegated from your ISP
+# Public hosts
+    	};
+    	
+    	// Matches all clients not matched by previous view(s)
+    	
+    	view "external" in {
+    	    attach-cache "r-external";
+    	    include "external_servers.conf";
+    	
+    	    match-clients { key EXTERNAL_VIEW_KEY;
+    			   !key INTERNAL_VIEW_KEY;
+    			    any; }; 
+    	    notify-source 	 192.168.148.6;
+    	    also-notify	{ external_slaves; };
+    	    transfer-source 	 192.168.148.6;
+    	    query-source address 192.168.148.6;
+    	    recursion yes; 
+    	    allow-recursion { key EXTERNAL_VIEW_KEY;
+    			     !key INTERNAL_VIEW_KEY;
+    			      any_external; };
+    	    allow-query-cache { key EXTERNAL_VIEW_KEY;
+    			       !key INTERNAL_VIEW_KEY;
+    			        any_external; };
+    	
+    	    include "external_slave_zones.conf";
+     	    zone "example.net" in {
+     		type slave;
+     		file "...";
+      		allow-transfer { external_xfr; };
+     		forwarders { };
+     		masters { example_ext_masters; };
+     	    };
+
+    	}; 
+    	
+ 
+
+ </section>
