@@ -29,4 +29,8 @@
  <xi:include xmlns:xi="http://www.w3.org/2001/XInclude"
  href="recipes_tlsa.xml" />
 
+ <!-- Internal Validating View -->
+ <xi:include xmlns:xi="http://www.w3.org/2001/XInclude"
+ href="recipes_internal-validating-view.xml" />
+
 </chapter>
