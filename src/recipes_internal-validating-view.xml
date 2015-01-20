@@ -62,9 +62,7 @@ traditional authoritative view.
 <para>
 So presenting an 'internal' and an 'external' view to clients
 requires configuring 4 views in named:
-<pre>
- 1 recursive view and 1 authoritative view for each view presented.
-</pre><br />
+1 recursive view and 1 authoritative view for each view presented.
 
 If previously you only had one view, you'll want to implement 2.
 (Or split your recursive server from your authoritative server.
@@ -88,9 +86,10 @@ and because it has both IPv4 and IPv6.)
 Note the use of include to avoid replication.
 </para>
 
+  <screen>
 # These acls classify clients (that don't provide TSIG keys).
-acl any_external { <private IP addresses to be served by 'external' view>};
-acl all_internal { !any_external;  <private IP address space> };
+acl any_external { &lt;private IP addresses to be served by 'external' view&gt;};
+acl all_internal { !any_external;  &lt;private IP address space&gt; };
 
      	key "INTERNAL_VIEW_KEY" {
      	      algorithm hmac-md5;
@@ -141,11 +140,13 @@ acl all_internal { !any_external;  <private IP address space> };
      	    allow-query-cache { key INTERNAL_VIEW_KEY;
      			       !key EXTERNAL_VIEW_KEY;
       			        all_internal; }; # Note that keys take precedence over this ACL
+  </screen>
 
 <para>
 For internal views, the trust root is independent of the registrar, so:
 </para>
 
+  <screen>
      	    include "internal_trusted_keys.conf"; // Validator
 trusted-keys {
   example.net. 257 3 7 "...";  # Apex only
@@ -167,14 +168,16 @@ zone "example.net" in {
      	
 # The authoritative view.  This one is a slave, but masters work with the usual 
 changes to the zone statements
- 71	view "internal" in { 
+ 	view "internal" in { 
      	    attach-cache "r-internal";
      	    include "internal_servers.conf";
+  </screen>
      	
 <para>
 Same as above:
 </para>
 
+  <screen>
      	    match-clients { key INTERNAL_VIEW_KEY;
      			    !key EXTERNAL_VIEW_KEY;
       			   all_internal; }; # Note that keys take precedence over this ACL
@@ -201,6 +204,7 @@ L
      		masters { example_int_masters; };
      	    };
      	};
+  </screen>
 
 <para>
 The external view doesn't do recursion for external clients - but
@@ -212,6 +216,7 @@ you can eliminate the r-external view (and only need 3 views.)
 However, odds are you'll find that you want this at some point.
 </para>
 
+<screen>
     	view "r-external" in {
     	    include "external_servers.conf";
 # Same as above internal_servers.conf, except EXTERNAL_VIEW_KEY
@@ -270,7 +275,7 @@ However, odds are you'll find that you want this at some point.
      	    };
 
     	}; 
-    	
+</screen>   	
  
 
  </section>
