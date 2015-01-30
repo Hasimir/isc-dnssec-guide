@@ -1,3 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN"
+"http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd" [
+<!ENTITY mdash  "&#x2014;" >
+]>
+
  <!-- Internal Validating View -->
  <section id="internal-validating-view">
   <title>Internal Validating View Recipe</title>
@@ -24,7 +30,7 @@ Many organizations have separate 'views' of the DNS for internal
 use and for clients.  Some people hate them.  Some implement them
 for conveniences.  Others implement them for technical reasons,
 including reverse DNS for unroutable address space and the NAT
-behavior of certain routers.  So they exist - and there is a trap
+behavior of certain routers.  So they exist &mdash; and there is a trap
 for DNSSEC-aware clients:  Often nameservers providing multiple
 views to (recursive) clients are also also authoritative for local
 zones.
@@ -39,7 +45,7 @@ is also authoritative for a zone.
 <para>
 You want your zones validate everywhere for a consistent user
 experience, and so you can debug your zones, applications and tools
-internally - before exposing them to your customers.  This can be
+internally &mdash; before exposing them to your customers.  This can be
 tricky (and doesn't happen by default)
 </para>
 
@@ -53,41 +59,32 @@ matches is important.
 
 <para>
 Client requests that request recursion hit the recursive view,
-which consults the authoritative view - and thus will validate and
+which consults the authoritative view &mdash; and thus will validate and
 set AD.  Clients that don't (and that includes the recursive view's
-internal requests from the static-stub zone) fall thru to a
+internal requests from the static-stub zone) fall through to a
 traditional authoritative view.
 </para>
 
 <para>
 So presenting an 'internal' and an 'external' view to clients
-requires configuring 4 views in named:
-1 recursive view and 1 authoritative view for each view presented.
+requires configuring four views in <command>named</command>:
+one recursive view and one authoritative view for each view presented.
 
-If previously you only had one view, you'll want to implement 2.
+If previously you only had one view, you'll want to implement two.
 (Or split your recursive server from your authoritative server.
-There are valid arguments for both cases - to the point of religious
+There are valid arguments for both cases &mdash; to the point of religious
 wars, which won't be settled here.  Assuming you keep a consolidated
 server, this is how you make it work.)
 </para>
 
 <para>
-Here are config file snippets.  I've tried to edit it down to
-essentials; hope I didn't lose anything important.
-</para>
-
-<para>
-This server is 192.168.148.6 internally; it has a public IP addresses
-via NAT.  (The master has more clutter, both because it's a master,
-and because it has both IPv4 and IPv6.)
-</para>
-
-<para>
-Note the use of include to avoid replication.
-</para>
+Following are some configuration file examples.  This server is
+192.168.148.6 internally; it has a public IP addresses via NAT.
+Note the use of the <option>include</option> directive to avoid
+replication.  </para>
 
   <screen>
-# These acls classify clients (that don't provide TSIG keys).
+# These ACLs classify clients (that don't provide TSIG keys).
 acl any_external { &lt;private IP addresses to be served by 'external' view&gt;};
 acl all_internal { !any_external;  &lt;private IP address space&gt; };
 
@@ -100,7 +97,7 @@ acl all_internal { !any_external;  &lt;private IP address space&gt; };
      	      algorithm hmac-md5;
      	      secret Unavailable;
      	};
-              # Recursive resolving view  - internal
+              # Recursive resolving view - internal
 
       view "r-internal" in {
      	    include "internal_servers.conf";
@@ -148,12 +145,12 @@ For internal views, the trust root is independent of the registrar, so:
 
   <screen>
      	    include "internal_trusted_keys.conf"; // Validator
+# This is the example block, use yours
 trusted-keys {
   example.net. 257 3 7 "...";  # Apex only
   168.192.in-addr.arpa. 257 3 7 "..."; 
   10.in-addr.arpa. 257 3 7 "..."; 
-  8.b.d.0.1.0.0.2.ip6.arpa. 257 3 7 "...";  # This is the example block, use you
-rs
+  8.b.d.0.1.0.0.2.ip6.arpa. 257 3 7 "...";
 }
 
      	
@@ -163,11 +160,11 @@ zone "example.net" in {
   server-addresses { 127.0.0.1; };
 }
 
- ... # RPT for each zone served, including subdomains
+ # ... repeat for each zone served, including subdomains
      	};
      	
-# The authoritative view.  This one is a slave, but masters work with the usual 
-changes to the zone statements
+# The authoritative view.  This one is a slave, but masters work
+# with the usual changes to the zone statements
  	view "internal" in { 
      	    attach-cache "r-internal";
      	    include "internal_servers.conf";
@@ -180,7 +177,8 @@ Same as above:
   <screen>
      	    match-clients { key INTERNAL_VIEW_KEY;
      			    !key EXTERNAL_VIEW_KEY;
-      			   all_internal; }; # Note that keys take precedence over this ACL
+      			   all_internal; };
+            # Note that keys take precedence over this ACL
      	
      	    notify-source 	 192.168.148.6;	
      	    also-notify	{ internal_slaves; };
@@ -189,12 +187,13 @@ Same as above:
      	    recursion yes; 
      	    allow-recursion { key INTERNAL_VIEW_KEY;
      			     !key EXTERNAL_VIEW_KEY;
-     			      all_internal; }; # Note that keys take precedence over this ACL
+     			      all_internal; };
+            # Note that keys take precedence over this ACL
      	    allow-query-cache { key INTERNAL_VIEW_KEY;
      			       !key EXTERNAL_VIEW_KEY;
-     			        all_internal; }; # Note that keys take precedence over this AC
-L
-     	
+     			        all_internal; };
+            # Note that keys take precedence over this ACL
+
      	    include "internal_slave_zones.conf";
      	    zone "example.net" in {
      		type slave;
@@ -207,12 +206,12 @@ L
   </screen>
 
 <para>
-The external view doesn't do recursion for external clients - but
-does for internal 'as if' client addresses.  Looks the same except
-'any_external' represents *private* as-if addresses.  Real external
-client addresses will fall thru to the 'external', authoritative
+The external view doesn't do recursion for external clients, but
+does for internal as if client addresses.  Looks the same except
+any_external represents private as-if addresses.  Real external
+client addresses will fall through to the external authoritative
 only view.  If you don't ever do recursion for the external view,
-you can eliminate the r-external view (and only need 3 views.)
+you can eliminate the r-external view (and only need three views.)
 However, odds are you'll find that you want this at some point.
 </para>
 
